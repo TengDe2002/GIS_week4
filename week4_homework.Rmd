@@ -1,30 +1,63 @@
 ---
-title: "Week4_homework"
-author: "TD"
-date: "2026-10-29"
+title: "Global Gender Inequality Index: Change 2010–2019"
+author: "TengDe Wang"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, message=FALSE, warning=FALSE}
+library(sf)
+library(tidyverse)
+library(here)
+library(janitor)
+library(countrycode)
 ```
 
-## R Markdown
+## 1. Read in data
+```{r read, message=FALSE}
+# UNDP composite indices (1990–2023)
+gii <- read_csv(here("data", "HDR25_Composite_indices_complete_time_series.csv"),
+                locale = locale(encoding = "latin1"),
+                na = c("", "NA", "..")) %>%
+  clean_names() %>%
+  select(iso3, country, gii_2010, gii_2019) %>%
+  mutate(gii_diff_2010_2019 = gii_2019 - gii_2010)
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# World countries
+world <- st_read(here("data", "World_Countries_(Generalized)_2173680399808997149.geojson"),
+                 quiet = TRUE) %>%
+  clean_names()
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+names(world)
+```
+## 2. Join
+```{r join, warning=FALSE}
+world_gii <- world %>%
+  mutate(iso3 = countrycode(iso, origin = "iso2c", destination = "iso3c")) %>%
+  left_join(gii, by = "iso3")
 
-```{r cars}
-summary(cars)
+world_gii %>%
+  st_drop_geometry() %>%
+  select(country.x, iso3, gii_2010, gii_2019, gii_diff_2010_2019) %>%
+  head(10)
 ```
 
-## Including Plots
+## 3. Map the change
 
-You can also embed plots, for example:
+Negative values = inequality decreased between 2010 and 2019.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r map}
+ggplot(world_gii) +
+  geom_sf(aes(fill = gii_diff_2010_2019), colour = "white", linewidth = 0.1) +
+  scale_fill_gradient2(low = "#2166ac", mid = "#f7f7f7", high = "#b2182b",
+                       midpoint = 0, na.value = "grey80",
+                       name = "GII change\n(2019 − 2010)") +
+  theme_minimal() +
+  labs(title = "Change in Gender Inequality Index, 2010–2019",
+       caption = "Data: UNDP HDR; ArcGIS Hub World Countries (Generalized)")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## 4. Save output
+
+```{r save}
+st_write(world_gii, here("world_gii.geojson"), delete_dsn = TRUE, quiet = TRUE)
+```
